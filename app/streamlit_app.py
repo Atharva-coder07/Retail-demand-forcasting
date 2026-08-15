@@ -236,12 +236,13 @@ st.markdown(
 )
 
 
-# ─── Gemini scenario advice (Phase 8.2) ──────────────────────────────────────
+# ─── Gemini scenario advice (Phase 8.2) — Cached for Instant UI Responsiveness ────
 
-def generate_scenario_advice(baseline_pred, scenario_pred, scenario_params, unit_price):
+@st.cache_data(show_spinner=False, ttl=3600)
+def generate_scenario_advice(baseline_pred, scenario_pred, price_change_pct, run_promo, force_holiday, unit_price):
     unit_delta_pct = (scenario_pred - baseline_pred) / max(baseline_pred, 1e-6) * 100
     baseline_revenue = baseline_pred * unit_price
-    scenario_revenue = scenario_pred * (unit_price * (1 + scenario_params['price_change_pct'] / 100))
+    scenario_revenue = scenario_pred * (unit_price * (1 + price_change_pct / 100))
     revenue_delta = scenario_revenue - baseline_revenue
 
     try:
@@ -253,7 +254,7 @@ invent additional statistics. It is fine to add ONE general, clearly-labeled
 caveat (e.g. "this doesn't account for competitor response") but do not
 present that caveat as a computed fact.
 
-Scenario applied: price change {scenario_params['price_change_pct']:+.0f}%, promo={scenario_params['run_promo']}, simulated holiday={scenario_params['force_holiday']}
+Scenario applied: price change {price_change_pct:+.0f}%, promo={run_promo}, simulated holiday={force_holiday}
 Baseline forecast: {baseline_pred:.0f} units (${baseline_revenue:,.0f} revenue)
 Scenario forecast: {scenario_pred:.0f} units ({unit_delta_pct:+.1f}%), (${scenario_revenue:,.0f} revenue, net change ${revenue_delta:+,.0f})
 
@@ -264,15 +265,25 @@ Write the recommendation now."""
     except Exception:
         sign_str = "+" if revenue_delta >= 0 else ""
         return (
-            f"Increasing price by {scenario_params['price_change_pct']:+.0f}% alongside active promo "
+            f"Increasing price by {price_change_pct:+.0f}% alongside active promo "
             f"generates net {sign_str}${revenue_delta:,.0f} revenue. Elasticity model predicts "
             f"demand will shift by {unit_delta_pct:+.1f}%."
         )
 
 
-# ─── NL Q&A intent parsing (Phase 8.4) ───────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_cached_shap_narration(base_value, predicted_value, top_contrib_json, store_id, sku_id, date_str):
+    top_contributions = json.loads(top_contrib_json)
+    context = {'store_id': store_id, 'sku_id': sku_id, 'date': date_str}
+    return narrate_shap_explanation(base_value, predicted_value, top_contributions, context)
 
+
+# ─── NL Q&A intent parsing (Phase 8.4) — Cached for Speed ───────────────────
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def parse_user_intent(user_question, store_ids, sku_ids, current_store, current_sku):
+
     try:
         from llm import get_model
         
@@ -842,13 +853,8 @@ Store: {store_selected} | SKU: {sku_selected}
                 unsafe_allow_html=True
             )
 
-        # AI Strategic Recommendation Card
-        scenario_params = {
-            'price_change_pct': price_pct,
-            'run_promo': sim_promo,
-            'force_holiday': sim_holiday,
-        }
-        rec_text = generate_scenario_advice(pred_base, pred_scen, scenario_params, base_price)
+        rec_text = generate_scenario_advice(pred_base, pred_scen, price_pct, sim_promo, sim_holiday, base_price)
+
         
         st.markdown(
             f"""
@@ -912,8 +918,9 @@ Store: {store_selected} | SKU: {sku_selected}
             top_contributions = {feat_names[i]: float(shap_vals[i]) for i in top_indices}
             
             predicted_value = base_val + float(np.sum(shap_vals))
-            context = {'store_id': store_selected, 'sku_id': sku_selected, 'date': latest_date}
-            narration = narrate_shap_explanation(base_val, predicted_value, top_contributions, context)
+            top_contrib_json = json.dumps({k: round(v, 2) for k, v in top_contributions.items()})
+            narration = get_cached_shap_narration(round(base_val, 1), round(predicted_value, 1), top_contrib_json, store_selected, sku_selected, latest_date)
+
             
             st.info(f"✦ **AI Explanation**: {narration}")
             
