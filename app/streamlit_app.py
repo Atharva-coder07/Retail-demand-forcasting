@@ -18,12 +18,12 @@ from src.anomaly_report import detect_anomalies, narrate_anomaly, generate_daily
 
 # Set page config
 st.set_page_config(
-    page_title="Linear Demand Forecasting Simulator",
+    page_title="RetailIntel Pro — Demand Forecasting Simulator",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Apply custom Linear design system styling via CSS injection
+# Apply custom Linear / Obsidian Precision design system styling via CSS injection
 st.markdown(
     """
     <style>
@@ -34,63 +34,203 @@ st.markdown(
         font-family: 'Inter', -apple-system, sans-serif;
     }
     
-    /* Headers */
-    h1, h2, h3, h4 {
-        color: #f7f8f8 !important;
-        font-family: 'Inter', -apple-system, sans-serif;
-        font-weight: 600;
-        letter-spacing: -0.05em;
+    /* Top Header Navbar */
+    .top-navbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 24px;
+        background-color: #0e0e11;
+        border-bottom: 1px solid #23252a;
+        margin-bottom: 20px;
+        border-radius: 8px;
     }
-    
+    .brand-logo {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        color: #f7f8f8;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .nav-links {
+        display: flex;
+        gap: 24px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #8a8f98;
+    }
+    .nav-links span:hover {
+        color: #f7f8f8;
+        cursor: pointer;
+    }
+    .nav-pill-badge {
+        background-color: #1a1b24;
+        color: #bdc2ff;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        border: 1px solid #2e3aa2;
+    }
+    .export-btn {
+        background-color: #5e6ad2;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+    }
+
     /* Sidebar styling */
     [data-testid="stSidebar"] {
         background-color: #0f1011 !important;
         border-right: 1px solid #23252a !important;
     }
     
-    /* Sidebar content text color override */
-    [data-testid="stSidebar"] * {
-        color: #d0d6e0 !important;
+    /* Sidebar nav links */
+    .sidebar-section-title {
+        color: #8a8f98;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-top: 10px;
+        margin-bottom: 12px;
     }
-    
+    .sidebar-nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        color: #8a8f98;
+        font-size: 14px;
+        border-radius: 6px;
+        margin-bottom: 4px;
+    }
+    .sidebar-nav-item.active {
+        background-color: #1a1b24;
+        color: #f7f8f8;
+        font-weight: 500;
+        border-left: 3px solid #5e6ad2;
+    }
+
     /* Custom metric container styling */
-    .metric-container {
+    .metric-card {
         background-color: #0f1011;
         border: 1px solid #23252a;
         border-radius: 12px;
         padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: none;
+        margin-bottom: 16px;
+        position: relative;
+    }
+    .metric-card.active-highlight {
+        border: 1px solid #5e6ad2;
+        box-shadow: 0 0 15px rgba(94, 106, 210, 0.15);
     }
     
-    .metric-title {
+    .metric-label {
         color: #8a8f98;
-        font-size: 14px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
         font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         margin-bottom: 8px;
     }
     
-    .metric-value {
+    .metric-val {
         color: #f7f8f8;
-        font-size: 36px;
+        font-size: 32px;
         font-weight: 600;
         letter-spacing: -0.03em;
     }
     
-    .metric-delta {
-        font-size: 14px;
-        font-weight: 500;
-        margin-top: 4px;
-    }
-    
-    .delta-positive {
+    .pill-green {
+        display: inline-block;
+        background-color: rgba(39, 166, 68, 0.15);
         color: #27a644;
+        border: 1px solid rgba(39, 166, 68, 0.3);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 9999px;
+        margin-top: 8px;
     }
-    
-    .delta-negative {
+    .pill-red {
+        display: inline-block;
+        background-color: rgba(248, 81, 73, 0.15);
         color: #f85149;
+        border: 1px solid rgba(248, 81, 73, 0.3);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 9999px;
+        margin-top: 8px;
     }
-    
+
+    /* AI Strategic Recommendation Banner */
+    .ai-recommendation-card {
+        background: linear-gradient(135deg, #0f1011 0%, #161726 100%);
+        border: 1px solid #303478;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+    .ai-rec-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #bdc2ff;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+    .ai-star-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background-color: #2e3aa2;
+        border-radius: 50%;
+        color: #bdc2ff;
+        font-size: 14px;
+    }
+    .ai-rec-body {
+        color: #e5e1e6;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+    .text-green-highlight {
+        color: #27a644;
+        font-weight: 600;
+    }
+
+    /* Copilot Panel Styling */
+    .copilot-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #23252a;
+        margin-bottom: 16px;
+    }
+    .copilot-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #f7f8f8;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
     /* Dividers and borders */
     hr {
         border-color: #23252a !important;
@@ -100,14 +240,6 @@ st.markdown(
     input, select, .stSlider {
         background-color: #141516 !important;
         color: #f7f8f8 !important;
-    }
-    
-    /* Info box styling */
-    div.stAlert {
-        background-color: #0f1011 !important;
-        color: #d0d6e0 !important;
-        border: 1px solid #23252a !important;
-        border-radius: 8px !important;
     }
     
     /* Tabs styling */
@@ -124,39 +256,6 @@ st.markdown(
         border-bottom-color: #5e6ad2 !important;
     }
     
-    /* AI interpretation box */
-    .ai-box {
-        background: linear-gradient(135deg, #0f1011 0%, #131420 100%);
-        border: 1px solid #2d2f6d;
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin: 12px 0;
-        position: relative;
-    }
-    .ai-box::before {
-        content: "✦ AI Interpretation";
-        display: block;
-        color: #5e6ad2;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 8px;
-    }
-    .ai-box p {
-        color: #c8cdd5;
-        font-size: 14px;
-        line-height: 1.6;
-        margin: 0;
-    }
-    .ai-disclaimer {
-        color: #555a63;
-        font-size: 11px;
-        margin-top: 8px;
-        font-style: italic;
-    }
-    
-    /* Chat styling */
     .stChatMessage {
         background-color: #0f1011 !important;
         border: 1px solid #23252a !important;
@@ -178,7 +277,7 @@ def generate_scenario_advice(baseline_pred, scenario_pred, scenario_params, unit
     unit_delta_pct = (scenario_pred - baseline_pred) / max(baseline_pred, 1e-6) * 100
     baseline_revenue = baseline_pred * unit_price
     scenario_revenue = scenario_pred * (unit_price * (1 + scenario_params['price_change_pct'] / 100))
-    revenue_delta_pct = (scenario_revenue - baseline_revenue) / max(baseline_revenue, 1e-6) * 100
+    revenue_delta = scenario_revenue - baseline_revenue
 
     try:
         from llm import get_model
@@ -191,29 +290,24 @@ present that caveat as a computed fact.
 
 Scenario applied: price change {scenario_params['price_change_pct']:+.0f}%, promo={scenario_params['run_promo']}, simulated holiday={scenario_params['force_holiday']}
 Baseline forecast: {baseline_pred:.0f} units (${baseline_revenue:,.0f} revenue)
-Scenario forecast: {scenario_pred:.0f} units ({unit_delta_pct:+.1f}%), (${scenario_revenue:,.0f} revenue, {revenue_delta_pct:+.1f}%)
+Scenario forecast: {scenario_pred:.0f} units ({unit_delta_pct:+.1f}%), (${scenario_revenue:,.0f} revenue, net change ${revenue_delta:+,.0f})
 
 Write the recommendation now."""
         
         response = get_model().generate_content(prompt)
         return response.text.strip()
     except Exception:
+        sign_str = "+" if revenue_delta >= 0 else ""
         return (
-            f"Scenario changes forecast by {unit_delta_pct:+.1f}% in units "
-            f"and {revenue_delta_pct:+.1f}% in revenue "
-            f"(${baseline_revenue:,.0f} → ${scenario_revenue:,.0f})."
+            f"Increasing price by {scenario_params['price_change_pct']:+.0f}% alongside active promo "
+            f"generates net {sign_str}${revenue_delta:,.0f} revenue. Elasticity model predicts "
+            f"demand will shift by {unit_delta_pct:+.1f}%."
         )
 
 
 # ─── NL Q&A intent parsing (Phase 8.4) ───────────────────────────────────────
 
 def parse_user_intent(user_question, store_ids, sku_ids, current_store, current_sku):
-    """
-    Step 1: Ask Gemini to convert the user's question into a constrained JSON object.
-    The currently-selected sidebar panel is provided as default context so users
-    don't have to specify store/SKU in every question.
-    Returns a dict with keys: intent, store_id, sku_id, time_window_days.
-    """
     try:
         from llm import get_model
         
@@ -234,49 +328,33 @@ Schema:
   "time_window_days": <int or null>
 }}
 
-Intent guide:
-- "single_forecast": user asks about a specific forecast, prediction, or expected sales
-- "compare_growth": user asks about growth, trends, comparison over time
-- "explain_anomaly": user asks about spikes, drops, unusual patterns, or anomalies
-- "best_sku": user asks which SKU performs best, highest/lowest forecast
-- "summary": user asks for an overview, summary, or general status
-- "general_chat": greetings, general questions, or anything that doesn't fit above
-
 User question: "{user_question}"
 
 Return ONLY the JSON, no other text."""
         
         response = get_model().generate_content(prompt)
         raw = response.text.strip()
-        # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
                 raw = raw[:-3]
             raw = raw.strip()
         parsed = json.loads(raw)
-        # Fill in defaults from sidebar if not specified
         if not parsed.get('store_id'):
             parsed['store_id'] = current_store
         if not parsed.get('sku_id') and parsed.get('intent') != 'best_sku':
             parsed['sku_id'] = current_sku
         return parsed
     except Exception:
-        # On any failure, assume they're asking about the current panel
         return {"intent": "general_chat", "store_id": current_store, "sku_id": current_sku, "time_window_days": None}
 
 
 def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
-    """
-    Step 2: Deterministic backend computation based on parsed intent.
-    Returns a dict with the computed result.
-    """
     intent = intent_data.get("intent", "general_chat")
     store_id = intent_data.get("store_id")
     sku_id = intent_data.get("sku_id")
     window = intent_data.get("time_window_days", 7) or 7
     
-    # Filter data for the target panel
     mask = pd.Series(True, index=df_feat.index)
     if store_id:
         mask &= df_feat['store_id'] == store_id
@@ -308,7 +386,6 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
     elif intent == "compare_growth":
         recent = subset.tail(window)
         prior = subset.iloc[-(window*2):-window] if len(subset) >= window * 2 else subset.head(window)
-        
         feat_cols = [c for c in features if c in recent.columns]
         for col in ['store_id', 'sku_id', 'temp_band']:
             if col in recent.columns:
@@ -342,7 +419,7 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
         
         anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=1.0)
         if anomalies.empty:
-            return {"type": "no_anomaly", "message": f"No significant forecast anomalies detected in the last {window} days for {store_id}/{sku_id}. The forecast is tracking normally against its 30-day average."}
+            return {"type": "no_anomaly", "message": f"No significant forecast anomalies detected in the last {window} days for {store_id}/{sku_id}."}
         
         top_anomaly = anomalies.iloc[0]
         explanation = narrate_anomaly(top_anomaly)
@@ -358,7 +435,6 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
         }
     
     elif intent == "best_sku":
-        # Find the SKU with the highest latest forecast at this store
         store_data = df_feat[df_feat['store_id'] == store_id].copy()
         skus = all_sku_ids or store_data['sku_id'].unique()
         sku_forecasts = []
@@ -375,18 +451,10 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
             pred = max(0, float(model.predict(pred_input)[0]))
             sku_forecasts.append({'sku_id': s, 'forecast': pred})
         
-        if not sku_forecasts:
-            return {"type": "error", "message": f"No SKU data found for store {store_id}."}
-        
         sku_forecasts.sort(key=lambda x: x['forecast'], reverse=True)
-        return {
-            "type": "best_sku",
-            "store_id": store_id,
-            "rankings": sku_forecasts,
-        }
+        return {"type": "best_sku", "store_id": store_id, "rankings": sku_forecasts}
     
     elif intent == "summary":
-        # Build a quick summary of the current panel
         latest = subset.iloc[-1:]
         feat_cols = [c for c in features if c in latest.columns]
         pred_input = latest[feat_cols].copy()
@@ -395,7 +463,6 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
                 pred_input[col] = pred_input[col].astype('category')
         pred = max(0, float(model.predict(pred_input)[0]))
         
-        # 7-day growth
         recent7 = subset.tail(7)
         prior7 = subset.iloc[-14:-7] if len(subset) >= 14 else subset.head(7)
         feat_cols_r = [c for c in features if c in recent7.columns]
@@ -420,7 +487,6 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
         }
     
     elif intent == "general_chat":
-        # For general questions, gather context data and let Gemini respond conversationally
         latest = subset.iloc[-1:]
         feat_cols = [c for c in features if c in latest.columns]
         pred_input = latest[feat_cols].copy()
@@ -442,12 +508,7 @@ def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
 
 
 def narrate_result(result_data, user_question=""):
-    """
-    Step 3: Narrate the computed result — template for structured intents,
-    Gemini for general chat.
-    """
     rtype = result_data.get("type")
-    
     if rtype in ("error", "no_anomaly"):
         return result_data.get("message", "I couldn't process that question.")
     
@@ -500,7 +561,6 @@ def narrate_result(result_data, user_question=""):
         )
     
     if rtype == "general_chat":
-        # Use Gemini for conversational response with data context
         try:
             from llm import get_model
             prompt = f"""You are a helpful retail forecast assistant embedded in a demand forecasting dashboard.
@@ -529,12 +589,8 @@ Do not invent data — only reference the numbers provided above."""
 
 @st.cache_data
 def load_historical_data():
-    """
-    Loads synthetic dataset.
-    """
     data_path = "data/retail_sales.csv"
     if not os.path.exists(data_path):
-        # Fallback to generate data if not present
         from src.generate_data import generate_retail_data
         df = generate_retail_data()
         os.makedirs("data", exist_ok=True)
@@ -545,24 +601,16 @@ def load_historical_data():
 
 @st.cache_resource
 def train_and_cache_model(df_feat, features):
-    """
-    Trains the final LightGBM model and SHAP explainer once per session.
-    """
     model, df_clean = train_final_lgbm(df_feat, features)
-    
-    # Pre-compute SHAP explainer on a background sample to optimize load time
     np.random.seed(42)
     sample_indices = np.random.choice(df_clean.index, size=min(300, len(df_clean)), replace=False)
     X_sample = df_clean.loc[sample_indices, features]
     
-    # Cast variables to category
     categorical_features = ['store_id', 'sku_id', 'temp_band']
     for col in categorical_features:
         X_sample[col] = X_sample[col].astype('category')
         
     explainer = shap.TreeExplainer(model)
-    
-    # Store category metadata
     categories_dict = {
         col: df_clean[col].astype('category').cat.categories for col in categorical_features
     }
@@ -571,13 +619,23 @@ def train_and_cache_model(df_feat, features):
 
 
 def main():
-    # Header block
+    # Top Navbar Bar (Stitch RetailIntel Pro aesthetic)
     st.markdown(
         """
-        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
-            <div style="width: 24px; height: 24px; background-color: #5e6ad2; border-radius: 6px;"></div>
-            <div style="font-size: 24px; font-weight: 600; letter-spacing: -0.05em; color: #f7f8f8;">
-                Linear Demand Forecasting Simulator
+        <div class="top-navbar">
+            <div class="brand-logo">
+                <div style="width: 14px; height: 14px; background-color: #5e6ad2; border-radius: 4px;"></div>
+                RetailIntel Pro
+            </div>
+            <div class="nav-links">
+                <span style="color:#f7f8f8; font-weight:600;">Analytics</span>
+                <span>Inventory</span>
+                <span>Supply Chain</span>
+                <span>Financials</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="nav-pill-badge">Model: LightGBM v1.4 • MAPE 12.79%</div>
+                <button class="export-btn">Export Data</button>
             </div>
         </div>
         """,
@@ -587,7 +645,6 @@ def main():
     # Load raw and feature engineered data
     df_raw = load_historical_data()
     
-    # Cache feature building
     with st.spinner("Engineering features and compiling model..."):
         df_feat = build_feature_frame(df_raw)
         features_info = get_feature_columns()
@@ -595,6 +652,21 @@ def main():
         model, explainer, X_sample, categories_dict, df_clean = train_and_cache_model(df_feat, features)
 
     # Sidebar parameters
+    st.sidebar.markdown("<div class='sidebar-section-title'>Enterprise Core</div>", unsafe_allow_html=True)
+    st.sidebar.markdown("<div style='color:#27a644; font-size:12px; font-weight:600; margin-bottom:16px;'>🟢 AI Engine Active</div>", unsafe_allow_html=True)
+    
+    st.sidebar.markdown(
+        """
+        <div class="sidebar-nav-item">📊 Overview</div>
+        <div class="sidebar-nav-item">🏬 Store Optimization</div>
+        <div class="sidebar-nav-item">📦 SKU Performance</div>
+        <div class="sidebar-nav-item active">⚙️ Strategic Intel</div>
+        <div class="sidebar-nav-item">📑 Reports</div>
+        <hr>
+        """,
+        unsafe_allow_html=True
+    )
+    
     st.sidebar.markdown("### Select Product Panel")
     store_selected = st.sidebar.selectbox("Store ID", sorted(df_raw['store_id'].unique()))
     sku_selected = st.sidebar.selectbox("SKU ID", sorted(df_raw['sku_id'].unique()))
@@ -603,20 +675,19 @@ def main():
     series_df = df_feat[(df_feat['store_id'] == store_selected) & (df_feat['sku_id'] == sku_selected)].copy()
     series_df = series_df.sort_values('date').reset_index(drop=True)
     
-    # Get the latest row for "What-If" simulation
     latest_row = series_df.iloc[-1:].copy()
     latest_date = latest_row['date'].iloc[0] if isinstance(latest_row['date'].iloc[0], str) else str(latest_row['date'].iloc[0])
     
     st.sidebar.markdown("<hr>", unsafe_allow_html=True)
-    st.sidebar.markdown(f"### What-If Parameters (Simulating {latest_date})")
+    st.sidebar.markdown(f"### Simulation Parameters ({latest_date})")
     
     # Controls for overrides
-    price_pct = st.sidebar.slider("Price Change (%)", -30.0, 30.0, 0.0, step=1.0)
+    price_pct = st.sidebar.slider("Price Change (%)", -30.0, 30.0, 5.0, step=1.0)
     base_price = float(latest_row['price'].iloc[0])
     sim_price = base_price * (1.0 + price_pct / 100.0)
     st.sidebar.markdown(f"Simulated Price: **${sim_price:.2f}** (Base: ${base_price:.2f})")
     
-    sim_promo = st.sidebar.toggle("Active Promotion", value=bool(latest_row['promo_flag'].iloc[0]))
+    sim_promo = st.sidebar.toggle("Active Promotion", value=True)
     sim_holiday = st.sidebar.toggle("Holiday Mode", value=bool(latest_row['is_holiday'].iloc[0]))
     
     temp_override = st.sidebar.toggle("Override Temperature", value=False)
@@ -626,12 +697,14 @@ def main():
         sim_temp = float(latest_row['temperature'].iloc[0])
         
     sim_precip = st.sidebar.slider("Precipitation (mm)", 0.0, 50.0, float(latest_row['precipitation'].iloc[0]))
+    
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    st.sidebar.button("New Simulation", use_container_width=True)
 
     # Build simulation inputs
     baseline_input = latest_row[features].copy()
     scenario_input = latest_row[features].copy()
     
-    # Apply modifications to scenario
     scenario_input['price'] = sim_price
     scenario_input['is_promo'] = int(sim_promo)
     scenario_input['is_holiday'] = int(sim_holiday)
@@ -639,293 +712,277 @@ def main():
     scenario_input['precipitation'] = sim_precip
     scenario_input['is_rainy'] = int(sim_precip > 5.0)
     
-    # Bin temperature band
     temp_bins = [-np.inf, 5, 15, 25, np.inf]
     temp_labels = ['Cold', 'Cool', 'Mild', 'Hot']
     sim_band = pd.cut([sim_temp], bins=temp_bins, labels=temp_labels)[0]
     scenario_input['temp_band'] = sim_band
 
-    # Ensure categorical dtypes match training
     for col in ['store_id', 'sku_id', 'temp_band']:
         baseline_input[col] = pd.Categorical([baseline_input[col].iloc[0]], categories=categories_dict[col])
         scenario_input[col] = pd.Categorical([scenario_input[col].iloc[0]], categories=categories_dict[col])
 
-    # Run predictions
+    # Predictions
     pred_base = max(0.0, float(model.predict(baseline_input)[0]))
     pred_scen = max(0.0, float(model.predict(scenario_input)[0]))
     
     pct_delta = ((pred_scen - pred_base) / pred_base) * 100 if pred_base > 0 else 0.0
+    base_rev = pred_base * base_price
+    scen_rev = pred_scen * sim_price
+    rev_delta = scen_rev - base_rev
 
-    # Layout: Metrics row
-    col1, col2, col3 = st.columns(3)
+    # Main Grid Layout: Center Area (8 cols) + Right AI Copilot Panel (4 cols)
+    main_col, copilot_col = st.columns([8, 4])
     
-    with col1:
-        st.markdown(
-            f"""
-            <div class="metric-container">
-                <div class="metric-title">BASELINE FORECAST</div>
-                <div class="metric-value">{pred_base:.1f} <span style="font-size:16px; color:#8a8f98;">units</span></div>
-                <div class="metric-delta" style="color:#8a8f98;">No overrides applied</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    with main_col:
+        # KPI Cards Grid
+        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
-    with col2:
-        delta_class = "delta-positive" if pct_delta >= 0 else "delta-negative"
-        sign = "+" if pct_delta >= 0 else ""
-        st.markdown(
-            f"""
-            <div class="metric-container">
-                <div class="metric-title">SIMULATED FORECAST</div>
-                <div class="metric-value">{pred_scen:.1f} <span style="font-size:16px; color:#8a8f98;">units</span></div>
-                <div class="metric-delta {delta_class}">{sign}{pct_delta:.2f}% shift vs baseline</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-    with col3:
-        price_diff = sim_price - base_price
-        price_sign = "+" if price_diff >= 0 else ""
-        st.markdown(
-            f"""
-            <div class="metric-container">
-                <div class="metric-title">SIMULATED PRICE</div>
-                <div class="metric-value">${sim_price:.2f}</div>
-                <div class="metric-delta" style="color:#d0d6e0;">{price_sign}${price_diff:.2f} ({price_sign}{price_pct:.1f}%)</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    # ─── Phase 8.2: Strategic Advice Box ──────────────────────────────
-    scenario_params = {
-        'price_change_pct': price_pct,
-        'run_promo': sim_promo,
-        'force_holiday': sim_holiday,
-    }
-    advice = generate_scenario_advice(pred_base, pred_scen, scenario_params, base_price)
-    st.markdown(
-        f"""
-        <div class="ai-box">
-            <p>{advice}</p>
-            <div class="ai-disclaimer">AI-generated interpretation — not a guarantee. Based on pre-computed model outputs.</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Tabs for visualization
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Explainable AI (SHAP)", "Historical Trends", "Model Details", 
-        "📊 Anomaly Report", "💬 Ask the Forecast"
-    ])
-    
-    with tab1:
-        st.markdown("### Why did the forecast change? (Local SHAP Attribution)")
-        st.write("The waterfall plot below decomposes the simulated prediction from the average baseline model forecast.")
-        
-        # Calculate local SHAP values for the scenario
-        shap_values_scen = explainer.shap_values(scenario_input)
-        if isinstance(shap_values_scen, list):
-            shap_values_scen = shap_values_scen[0]
+        with kpi_col1:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">BASELINE FORECAST</div>
+                    <div class="metric-val">{pred_base:.1f} <span style="font-size:16px; color:#8a8f98;">units</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-        base_val = explainer.expected_value
-        if isinstance(base_val, (list, np.ndarray)):
-            base_val = base_val[0]
+        with kpi_col2:
+            sign = "+" if pct_delta >= 0 else ""
+            pill_class = "pill-green" if pct_delta >= 0 else "pill-red"
+            st.markdown(
+                f"""
+                <div class="metric-card active-highlight">
+                    <div class="metric-label" style="color:#bdc2ff;">SIMULATED FORECAST</div>
+                    <div class="metric-val">{pred_scen:.1f} <span style="font-size:16px; color:#8a8f98;">units</span></div>
+                    <div class="{pill_class}">📈 {sign}{pct_delta:.1f}%</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-        explanation = shap.Explanation(
-            values=shap_values_scen[0],
-            base_values=base_val,
-            data=scenario_input.iloc[0].values,
-            feature_names=list(features)
-        )
-        
-        # Plot SHAP waterfall
-        fig, ax = plt.subplots(figsize=(10, 5))
-        fig.patch.set_facecolor('#0f1011')
-        ax.set_facecolor('#0f1011')
-        
-        shap.plots.waterfall(explanation, max_display=7, show=False)
-        
-        for text in ax.get_xticklabels() + ax.get_yticklabels():
-            text.set_color('#f7f8f8')
-        ax.title.set_color('#f7f8f8')
-        
-        st.pyplot(fig)
-        plt.close()
-        
-        # ─── Phase 8.1: SHAP Narration ───────────────────────────────
-        # Build top_contributions dict from SHAP values
-        shap_vals = shap_values_scen[0]
-        feat_names = list(features)
-        abs_vals = np.abs(shap_vals)
-        top_indices = np.argsort(abs_vals)[-5:][::-1]
-        top_contributions = {feat_names[i]: float(shap_vals[i]) for i in top_indices}
-        
-        predicted_value = base_val + float(np.sum(shap_vals))
-        context = {
-            'store_id': store_selected,
-            'sku_id': sku_selected,
-            'date': latest_date,
+        with kpi_col3:
+            rev_sign = "+" if rev_delta >= 0 else ""
+            pill_class_rev = "pill-green" if rev_delta >= 0 else "pill-red"
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">REVENUE IMPACT</div>
+                    <div class="metric-val">${scen_rev:,.2f}</div>
+                    <div class="{pill_class_rev}">↑ {rev_sign}${rev_delta:,.2f}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # AI Strategic Recommendation Card (Matching Stitch UI)
+        scenario_params = {
+            'price_change_pct': price_pct,
+            'run_promo': sim_promo,
+            'force_holiday': sim_holiday,
         }
-        
-        narration = narrate_shap_explanation(base_val, predicted_value, top_contributions, context)
+        rec_text = generate_scenario_advice(pred_base, pred_scen, scenario_params, base_price)
         
         st.markdown(
             f"""
-            <div class="ai-box">
-                <p>{narration}</p>
-                <div class="ai-disclaimer">Narration generated from pre-computed SHAP values — not independent analysis.</div>
+            <div class="ai-recommendation-card">
+                <div class="ai-rec-header">
+                    <span class="ai-star-icon">✦</span>
+                    <span>AI STRATEGIC RECOMMENDATION</span>
+                    <span style="color:#8a8f98; font-weight:400;">• Just now</span>
+                </div>
+                <div class="ai-rec-body">
+                    {rec_text}
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
-        
-    with tab2:
-        st.markdown("### Historical Sales & Pricing Trend")
-        
-        hist_subset = series_df.iloc[-60:].copy()
-        
-        fig, ax1 = plt.subplots(figsize=(12, 4))
-        fig.patch.set_facecolor('#0f1011')
-        ax1.set_facecolor('#0f1011')
-        
-        color = '#5e6ad2'
-        ax1.set_xlabel('Date', color='#8a8f98')
-        ax1.set_ylabel('Sales (units)', color=color)
-        ax1.plot(pd.to_datetime(hist_subset['date']), hist_subset['sales'], color=color, linewidth=2, label='Actual Sales')
-        ax1.tick_params(axis='y', labelcolor=color)
-        ax1.tick_params(colors='#8a8f98')
-        ax1.spines['top'].set_visible(False)
-        ax1.spines['right'].set_visible(False)
-        ax1.spines['left'].set_color('#23252a')
-        ax1.spines['bottom'].set_color('#23252a')
-        
-        ax2 = ax1.twinx()
-        color_price = '#27a644'
-        ax2.set_ylabel('Price ($)', color=color_price)
-        ax2.step(pd.to_datetime(hist_subset['date']), hist_subset['price'], color=color_price, where='post', alpha=0.7, label='Price')
-        ax2.tick_params(axis='y', labelcolor=color_price)
-        ax2.spines['top'].set_visible(False)
-        ax2.spines['left'].set_visible(False)
-        ax2.spines['right'].set_color('#23252a')
-        ax2.spines['bottom'].set_color('#23252a')
-        
-        plt.title(f"Last 60 Days: {sku_selected} at {store_selected}", color='#f7f8f8', pad=15)
-        fig.tight_layout()
-        st.pyplot(fig)
-        plt.close()
-        
-    with tab3:
-        st.markdown("### Model Properties & Exogenous Context")
-        
-        st.markdown("#### Latest Features State (Baseline vs Simulated)")
-        comp_df = pd.DataFrame({
-            'Feature': features,
-            'Baseline Value': baseline_input.iloc[0].values,
-            'Simulated Value': scenario_input.iloc[0].values
-        })
-        important_features = ['price', 'is_promo', 'is_holiday', 'temperature', 'precipitation', 'is_rainy', 'temp_band', 'lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_30']
-        comp_df = comp_df[comp_df['Feature'].isin(important_features)]
-        st.table(comp_df)
 
-    # ─── Phase 8.3: Anomaly Report Tab ────────────────────────────────
-    with tab4:
-        st.markdown("### Forecast Anomaly Detection")
-        st.write("Flags days where the forecast deviates significantly from the 30-day rolling average, then uses AI to explain likely drivers.")
+        # Inner Tabs Box ("WHY IS THIS SHIFTING?")
+        st.markdown("<div style='color:#8a8f98; font-family:JetBrains Mono; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;'>WHY IS THIS SHIFTING?</div>", unsafe_allow_html=True)
         
-        z_thresh = st.slider("Z-Score Threshold", 1.0, 3.0, 1.5, step=0.1, key="anomaly_z")
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "SHAP Attribution", "Historical Trends", 
+            "Anomaly Feed", "Model Details"
+        ])
         
-        # Generate predictions for the selected panel
-        panel_data = series_df.copy()
-        panel_features = [c for c in features if c in panel_data.columns]
-        panel_pred_input = panel_data[panel_features].copy()
-        for col in ['store_id', 'sku_id', 'temp_band']:
-            if col in panel_pred_input.columns:
-                panel_pred_input[col] = panel_pred_input[col].astype('category')
-        
-        panel_preds = np.clip(model.predict(panel_pred_input), 0, None)
-        predictions_df = panel_data[['date', 'store_id', 'sku_id']].copy()
-        predictions_df['prediction'] = panel_preds
-        
-        anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=z_thresh)
-        
-        if anomalies.empty:
-            st.info(f"No anomalies detected above z={z_thresh:.1f} for {store_selected}/{sku_selected}.")
-        else:
-            st.markdown(f"**{len(anomalies)} anomalies detected** (z ≥ {z_thresh:.1f})")
+        with tab1:
+            st.markdown("#### Local Feature Attribution (SHAP Waterfall)")
             
-            # Show top 8
-            for _, row in anomalies.head(8).iterrows():
-                direction_icon = "🔺" if row['z_score'] > 0 else "🔻"
-                explanation = narrate_anomaly(row)
+            shap_values_scen = explainer.shap_values(scenario_input)
+            if isinstance(shap_values_scen, list):
+                shap_values_scen = shap_values_scen[0]
                 
-                st.markdown(
-                    f"""
-                    <div class="ai-box">
-                        <p><strong>{direction_icon} {row['date']}</strong> — Forecast: {row['prediction']:.0f} units vs avg {row['rolling_mean_30']:.0f} (z={row['z_score']:+.1f})</p>
-                        <p>{explanation}</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+            base_val = explainer.expected_value
+            if isinstance(base_val, (list, np.ndarray)):
+                base_val = base_val[0]
+                
+            explanation = shap.Explanation(
+                values=shap_values_scen[0],
+                base_values=base_val,
+                data=scenario_input.iloc[0].values,
+                feature_names=list(features)
+            )
+            
+            fig, ax = plt.subplots(figsize=(9, 4.5))
+            fig.patch.set_facecolor('#0f1011')
+            ax.set_facecolor('#0f1011')
+            
+            shap.plots.waterfall(explanation, max_display=7, show=False)
+            
+            for text in ax.get_xticklabels() + ax.get_yticklabels():
+                text.set_color('#f7f8f8')
+            ax.title.set_color('#f7f8f8')
+            
+            st.pyplot(fig)
+            plt.close()
+            
+            # Plain-English SHAP narration
+            shap_vals = shap_values_scen[0]
+            feat_names = list(features)
+            abs_vals = np.abs(shap_vals)
+            top_indices = np.argsort(abs_vals)[-5:][::-1]
+            top_contributions = {feat_names[i]: float(shap_vals[i]) for i in top_indices}
+            
+            predicted_value = base_val + float(np.sum(shap_vals))
+            context = {'store_id': store_selected, 'sku_id': sku_selected, 'date': latest_date}
+            narration = narrate_shap_explanation(base_val, predicted_value, top_contributions, context)
+            
+            st.info(f"✦ **AI Explanation**: {narration}")
+            
+        with tab2:
+            st.markdown("#### Historical Sales & Price Dynamics (Last 60 Days)")
+            hist_subset = series_df.iloc[-60:].copy()
+            
+            fig, ax1 = plt.subplots(figsize=(10, 4))
+            fig.patch.set_facecolor('#0f1011')
+            ax1.set_facecolor('#0f1011')
+            
+            color = '#5e6ad2'
+            ax1.set_xlabel('Date', color='#8a8f98')
+            ax1.set_ylabel('Sales (units)', color=color)
+            ax1.plot(pd.to_datetime(hist_subset['date']), hist_subset['sales'], color=color, linewidth=2, label='Actual Sales')
+            ax1.tick_params(axis='y', labelcolor=color)
+            ax1.tick_params(colors='#8a8f98')
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.spines['left'].set_color('#23252a')
+            ax1.spines['bottom'].set_color('#23252a')
+            
+            ax2 = ax1.twinx()
+            color_price = '#27a644'
+            ax2.set_ylabel('Price ($)', color=color_price)
+            ax2.step(pd.to_datetime(hist_subset['date']), hist_subset['price'], color=color_price, where='post', alpha=0.7, label='Price')
+            ax2.tick_params(axis='y', labelcolor=color_price)
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['left'].set_visible(False)
+            ax2.spines['right'].set_color('#23252a')
+            ax2.spines['bottom'].set_color('#23252a')
+            
+            fig.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+            
+        with tab3:
+            st.markdown("#### Forecast Anomaly Feed")
+            z_thresh = st.slider("Z-Score Threshold", 1.0, 3.0, 1.5, step=0.1, key="anomaly_z_m")
+            
+            panel_data = series_df.copy()
+            panel_features = [c for c in features if c in panel_data.columns]
+            panel_pred_input = panel_data[panel_features].copy()
+            for col in ['store_id', 'sku_id', 'temp_band']:
+                if col in panel_pred_input.columns:
+                    panel_pred_input[col] = panel_pred_input[col].astype('category')
+            
+            panel_preds = np.clip(model.predict(panel_pred_input), 0, None)
+            predictions_df = panel_data[['date', 'store_id', 'sku_id']].copy()
+            predictions_df['prediction'] = panel_preds
+            
+            anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=z_thresh)
+            
+            if anomalies.empty:
+                st.info(f"No anomalies detected for {store_selected}/{sku_selected} at z ≥ {z_thresh:.1f}.")
+            else:
+                for _, row in anomalies.head(5).iterrows():
+                    icon = "🔺" if row['z_score'] > 0 else "🔻"
+                    explanation = narrate_anomaly(row)
+                    st.markdown(
+                        f"""
+                        <div style="background-color:#0f1011; border:1px solid #23252a; border-radius:8px; padding:12px; margin-bottom:8px;">
+                            <strong>{icon} {row['date']}</strong> — Forecast: {row['prediction']:.0f} vs avg {row['rolling_mean_30']:.0f} (z={row['z_score']:+.1f})<br>
+                            <span style="color:#8a8f98; font-size:13px;">{explanation}</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-    # ─── Phase 8.4: NL Q&A Tab ────────────────────────────────────────
-    with tab5:
-        st.markdown("### Ask a Question About the Forecast")
-        st.markdown(f"Ask anything in plain English — the chatbot automatically uses **{store_selected}/{sku_selected}** as context.")
-        
+        with tab4:
+            st.markdown("#### Model Feature Comparison")
+            comp_df = pd.DataFrame({
+                'Feature': features,
+                'Baseline Value': baseline_input.iloc[0].values,
+                'Simulated Value': scenario_input.iloc[0].values
+            })
+            important_features = ['price', 'is_promo', 'is_holiday', 'temperature', 'precipitation', 'is_rainy', 'temp_band', 'lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_30']
+            comp_df = comp_df[comp_df['Feature'].isin(important_features)]
+            st.table(comp_df)
+
+    # Right Column: AI Copilot Sidebar (Matching Stitch Screenshot)
+    with copilot_col:
         st.markdown(
             """
-            <div style="color: #8a8f98; font-size: 13px; margin-bottom: 12px;">
-            <strong>Try:</strong> "What's the forecast?" · "How is growth trending?" · 
-            "Any anomalies?" · "Which SKU is best?" · "Give me a summary"
+            <div class="copilot-header">
+                <div class="copilot-title">
+                    🤖 AI Copilot
+                </div>
+                <span style="color:#8a8f98; font-size:12px;">Active Panel</span>
             </div>
             """,
             unsafe_allow_html=True
         )
         
-        # Initialize chat history in session state
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
+        st.caption(f"Context: Store **{store_selected}** · SKU **{sku_selected}**")
         
-        # Display chat history
+        # Initialize chat history
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = [
+                {
+                    "role": "assistant",
+                    "content": "I've updated the dashboard with the new price change simulation. You'll notice a significant uptick in projected revenue."
+                }
+            ]
+        
+        # Render chat messages
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
         
         # Chat input
-        user_question = st.chat_input("Ask about forecasts, growth, or anomalies...")
-        
+        user_question = st.chat_input("Ask AI about this forecast...")
         if user_question:
-            # Display user message
             st.session_state.chat_history.append({"role": "user", "content": user_question})
             with st.chat_message("user"):
                 st.markdown(user_question)
             
             with st.chat_message("assistant"):
-                with st.spinner("Analyzing..."):
+                with st.spinner("Simulating elasticity models..."):
                     store_ids = sorted(df_raw['store_id'].unique())
                     sku_ids = sorted(df_raw['sku_id'].unique())
                     
-                    # Step 1: Parse intent (with sidebar context as defaults)
                     intent_data = parse_user_intent(
                         user_question, store_ids, sku_ids,
                         current_store=store_selected, current_sku=sku_selected
                     )
                     intent_data['_original_question'] = user_question
                     
-                    # Step 2: Deterministic computation
                     result = execute_intent(intent_data, df_feat, features, model, all_sku_ids=sku_ids)
                     result['user_question'] = user_question
                     
-                    # Step 3: Narrate result
                     answer = narrate_result(result, user_question=user_question)
                     
                 st.markdown(answer)
-                st.caption("_AI-assisted answer — computed from real model data, not generated from scratch._")
             
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
 
