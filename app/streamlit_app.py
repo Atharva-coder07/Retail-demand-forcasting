@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -8,10 +9,12 @@ import shap
 
 # Add the project root to the path so we can import from src/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from src.features import build_feature_frame, get_feature_columns
 from src.models import train_final_lgbm
-from src.xai import compute_shap_values
+from src.xai import compute_shap_values, narrate_shap_explanation, format_contributions
+from src.anomaly_report import detect_anomalies, narrate_anomaly, generate_daily_report
 
 # Set page config
 st.set_page_config(
@@ -120,10 +123,264 @@ st.markdown(
         color: #f7f8f8 !important;
         border-bottom-color: #5e6ad2 !important;
     }
+    
+    /* AI interpretation box */
+    .ai-box {
+        background: linear-gradient(135deg, #0f1011 0%, #131420 100%);
+        border: 1px solid #2d2f6d;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin: 12px 0;
+        position: relative;
+    }
+    .ai-box::before {
+        content: "✦ AI Interpretation";
+        display: block;
+        color: #5e6ad2;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+    }
+    .ai-box p {
+        color: #c8cdd5;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0;
+    }
+    .ai-disclaimer {
+        color: #555a63;
+        font-size: 11px;
+        margin-top: 8px;
+        font-style: italic;
+    }
+    
+    /* Chat styling */
+    .stChatMessage {
+        background-color: #0f1011 !important;
+        border: 1px solid #23252a !important;
+        border-radius: 12px !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
+
+
+# ─── Gemini scenario advice (Phase 8.2) ──────────────────────────────────────
+
+def generate_scenario_advice(baseline_pred, scenario_pred, scenario_params, unit_price):
+    """
+    Computes revenue deltas in Python, then asks Gemini for a 2-3 sentence
+    strategic recommendation. Falls back to a template on API error.
+    """
+    unit_delta_pct = (scenario_pred - baseline_pred) / max(baseline_pred, 1e-6) * 100
+    baseline_revenue = baseline_pred * unit_price
+    scenario_revenue = scenario_pred * (unit_price * (1 + scenario_params['price_change_pct'] / 100))
+    revenue_delta_pct = (scenario_revenue - baseline_revenue) / max(baseline_revenue, 1e-6) * 100
+
+    try:
+        from llm import get_model
+        
+        prompt = f"""You are a retail pricing/planning advisor. Given the scenario below, write a
+2-3 sentence strategic recommendation. Use ONLY the numbers provided — do not
+invent additional statistics. It is fine to add ONE general, clearly-labeled
+caveat (e.g. "this doesn't account for competitor response") but do not
+present that caveat as a computed fact.
+
+Scenario applied: price change {scenario_params['price_change_pct']:+.0f}%, promo={scenario_params['run_promo']}, simulated holiday={scenario_params['force_holiday']}
+Baseline forecast: {baseline_pred:.0f} units (${baseline_revenue:,.0f} revenue)
+Scenario forecast: {scenario_pred:.0f} units ({unit_delta_pct:+.1f}%), (${scenario_revenue:,.0f} revenue, {revenue_delta_pct:+.1f}%)
+
+Write the recommendation now."""
+        
+        response = get_model().generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return (
+            f"Scenario changes forecast by {unit_delta_pct:+.1f}% in units "
+            f"and {revenue_delta_pct:+.1f}% in revenue "
+            f"(${baseline_revenue:,.0f} → ${scenario_revenue:,.0f})."
+        )
+
+
+# ─── NL Q&A intent parsing (Phase 8.4) ───────────────────────────────────────
+
+def parse_user_intent(user_question, store_ids, sku_ids):
+    """
+    Step 1: Ask Gemini to convert the user's question into a constrained JSON object.
+    Returns a dict with keys: intent, store_id, sku_id, time_window_days.
+    """
+    try:
+        from llm import get_model
+        
+        prompt = f"""Convert the user's question into JSON with this exact schema. Only use
+values that are valid given the lists provided — never invent a store_id or
+sku_id that isn't in the list.
+
+Valid store_ids: {list(store_ids)}
+Valid sku_ids: {list(sku_ids)}
+
+Schema:
+{{
+  "intent": "compare_growth" | "single_forecast" | "explain_anomaly" | "unknown",
+  "store_id": <one of valid store_ids or null>,
+  "sku_id": <one of valid sku_ids or null>,
+  "time_window_days": <int or null>
+}}
+
+User question: "{user_question}"
+
+Return ONLY the JSON, no other text."""
+        
+        response = get_model().generate_content(prompt)
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+        return json.loads(raw)
+    except Exception:
+        return {"intent": "unknown", "store_id": None, "sku_id": None, "time_window_days": None}
+
+
+def execute_intent(intent_data, df_feat, features, model):
+    """
+    Step 2: Deterministic backend computation based on parsed intent.
+    Returns a dict with the computed result.
+    """
+    intent = intent_data.get("intent", "unknown")
+    store_id = intent_data.get("store_id")
+    sku_id = intent_data.get("sku_id")
+    window = intent_data.get("time_window_days", 7) or 7
+    
+    if intent == "unknown":
+        return {"type": "unknown", "message": "I couldn't map that to a supported question. Try asking about a specific store/SKU's forecast, growth comparison, or anomaly explanation."}
+    
+    # Filter data
+    mask = pd.Series(True, index=df_feat.index)
+    if store_id:
+        mask &= df_feat['store_id'] == store_id
+    if sku_id:
+        mask &= df_feat['sku_id'] == sku_id
+    
+    subset = df_feat[mask].copy()
+    if subset.empty:
+        return {"type": "error", "message": f"No data found for store={store_id}, SKU={sku_id}."}
+    
+    subset = subset.sort_values('date')
+    
+    if intent == "single_forecast":
+        # Get the latest row and predict
+        latest = subset.iloc[-1:]
+        feat_cols = [c for c in features if c in latest.columns]
+        pred_input = latest[feat_cols].copy()
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in pred_input.columns:
+                pred_input[col] = pred_input[col].astype('category')
+        pred = max(0, float(model.predict(pred_input)[0]))
+        return {
+            "type": "single_forecast",
+            "store_id": store_id or "all",
+            "sku_id": sku_id or "all",
+            "date": str(latest['date'].iloc[0]),
+            "forecast": pred,
+        }
+    
+    elif intent == "compare_growth":
+        # Compute recent vs prior window forecasts
+        recent = subset.tail(window)
+        prior = subset.iloc[-(window*2):-window] if len(subset) >= window * 2 else subset.head(window)
+        
+        feat_cols = [c for c in features if c in recent.columns]
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in recent.columns:
+                recent[col] = recent[col].astype('category')
+                prior[col] = prior[col].astype('category')
+        
+        recent_avg = max(0, float(np.mean(model.predict(recent[feat_cols]))))
+        prior_avg = max(0, float(np.mean(model.predict(prior[feat_cols]))))
+        growth_pct = ((recent_avg - prior_avg) / max(prior_avg, 1e-6)) * 100
+        
+        return {
+            "type": "compare_growth",
+            "store_id": store_id or "all",
+            "sku_id": sku_id or "all",
+            "window_days": window,
+            "recent_avg_forecast": recent_avg,
+            "prior_avg_forecast": prior_avg,
+            "growth_pct": growth_pct,
+        }
+    
+    elif intent == "explain_anomaly":
+        # Find biggest anomaly in recent window
+        recent = subset.tail(window)
+        feat_cols = [c for c in features if c in recent.columns]
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in recent.columns:
+                recent[col] = recent[col].astype('category')
+        preds = np.clip(model.predict(recent[feat_cols]), 0, None)
+        
+        predictions_df = recent[['date', 'store_id', 'sku_id']].copy()
+        predictions_df['prediction'] = preds
+        
+        anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=1.0)
+        if anomalies.empty:
+            return {"type": "no_anomaly", "message": f"No significant forecast anomalies detected in the last {window} days for this panel."}
+        
+        top_anomaly = anomalies.iloc[0]
+        explanation = narrate_anomaly(top_anomaly)
+        return {
+            "type": "explain_anomaly",
+            "date": str(top_anomaly['date']),
+            "store_id": top_anomaly['store_id'],
+            "sku_id": top_anomaly['sku_id'],
+            "prediction": float(top_anomaly['prediction']),
+            "rolling_mean": float(top_anomaly['rolling_mean_30']),
+            "z_score": float(top_anomaly['z_score']),
+            "explanation": explanation,
+        }
+    
+    return {"type": "unknown", "message": "Could not process that intent."}
+
+
+def narrate_result(result_data):
+    """
+    Step 3: Optionally narrate the computed result via Gemini, or template directly.
+    """
+    rtype = result_data.get("type")
+    
+    if rtype in ("unknown", "error", "no_anomaly"):
+        return result_data.get("message", "I couldn't process that question.")
+    
+    if rtype == "single_forecast":
+        return f"The latest forecast for **{result_data['sku_id']}** at **{result_data['store_id']}** (date: {result_data['date']}) is **{result_data['forecast']:.0f} units**."
+    
+    if rtype == "compare_growth":
+        direction = "up" if result_data['growth_pct'] > 0 else "down"
+        return (
+            f"Over the last **{result_data['window_days']} days**, the average forecast for "
+            f"**{result_data['sku_id']}** at **{result_data['store_id']}** is "
+            f"**{result_data['recent_avg_forecast']:.0f} units/day** — "
+            f"that's **{abs(result_data['growth_pct']):.1f}% {direction}** from the prior "
+            f"{result_data['window_days']}-day average of {result_data['prior_avg_forecast']:.0f} units/day."
+        )
+    
+    if rtype == "explain_anomaly":
+        return (
+            f"**Anomaly on {result_data['date']}** ({result_data['store_id']}/{result_data['sku_id']}): "
+            f"forecast was {result_data['prediction']:.0f} units vs 30-day avg of "
+            f"{result_data['rolling_mean']:.0f} (z-score: {result_data['z_score']:+.1f}).  \n"
+            f"_{result_data['explanation']}_"
+        )
+    
+    return "Result computed but no narration template matched."
+
+
+# ─── Cached data loading ─────────────────────────────────────────────────────
 
 @st.cache_data
 def load_historical_data():
@@ -165,7 +422,8 @@ def train_and_cache_model(df_feat, features):
         col: df_clean[col].astype('category').cat.categories for col in categorical_features
     }
     
-    return model, explainer, X_sample, categories_dict
+    return model, explainer, X_sample, categories_dict, df_clean
+
 
 def main():
     # Header block
@@ -189,7 +447,7 @@ def main():
         df_feat = build_feature_frame(df_raw)
         features_info = get_feature_columns()
         features = features_info['all']
-        model, explainer, X_sample, categories_dict = train_and_cache_model(df_feat, features)
+        model, explainer, X_sample, categories_dict, df_clean = train_and_cache_model(df_feat, features)
 
     # Sidebar parameters
     st.sidebar.markdown("### Select Product Panel")
@@ -202,15 +460,16 @@ def main():
     
     # Get the latest row for "What-If" simulation
     latest_row = series_df.iloc[-1:].copy()
-    latest_date = latest_row['date'].iloc[0].strftime('%Y-%m-%d')
+    latest_date = latest_row['date'].iloc[0] if isinstance(latest_row['date'].iloc[0], str) else str(latest_row['date'].iloc[0])
     
     st.sidebar.markdown("<hr>", unsafe_allow_html=True)
     st.sidebar.markdown(f"### What-If Parameters (Simulating {latest_date})")
     
     # Controls for overrides
     price_pct = st.sidebar.slider("Price Change (%)", -30.0, 30.0, 0.0, step=1.0)
-    sim_price = float(latest_row['price'].iloc[0] * (1.0 + price_pct / 100.0))
-    st.sidebar.markdown(f"Simulated Price: **${sim_price:.2f}** (Base: ${latest_row['price'].iloc[0]:.2f})")
+    base_price = float(latest_row['price'].iloc[0])
+    sim_price = base_price * (1.0 + price_pct / 100.0)
+    st.sidebar.markdown(f"Simulated Price: **${sim_price:.2f}** (Base: ${base_price:.2f})")
     
     sim_promo = st.sidebar.toggle("Active Promotion", value=bool(latest_row['promo_flag'].iloc[0]))
     sim_holiday = st.sidebar.toggle("Holiday Mode", value=bool(latest_row['is_holiday'].iloc[0]))
@@ -282,7 +541,7 @@ def main():
         )
         
     with col3:
-        price_diff = sim_price - latest_row['price'].iloc[0]
+        price_diff = sim_price - base_price
         price_sign = "+" if price_diff >= 0 else ""
         st.markdown(
             f"""
@@ -295,15 +554,34 @@ def main():
             unsafe_allow_html=True
         )
 
+    # ─── Phase 8.2: Strategic Advice Box ──────────────────────────────
+    scenario_params = {
+        'price_change_pct': price_pct,
+        'run_promo': sim_promo,
+        'force_holiday': sim_holiday,
+    }
+    advice = generate_scenario_advice(pred_base, pred_scen, scenario_params, base_price)
+    st.markdown(
+        f"""
+        <div class="ai-box">
+            <p>{advice}</p>
+            <div class="ai-disclaimer">AI-generated interpretation — not a guarantee. Based on pre-computed model outputs.</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     # Tabs for visualization
-    tab1, tab2, tab3 = st.tabs(["Explainable AI (SHAP)", "Historical Trends", "Model Details"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Explainable AI (SHAP)", "Historical Trends", "Model Details", 
+        "📊 Anomaly Report", "💬 Ask the Forecast"
+    ])
     
     with tab1:
         st.markdown("### Why did the forecast change? (Local SHAP Attribution)")
         st.write("The waterfall plot below decomposes the simulated prediction from the average baseline model forecast.")
         
         # Calculate local SHAP values for the scenario
-        # TreeExplainer expects features matching training configuration
         shap_values_scen = explainer.shap_values(scenario_input)
         if isinstance(shap_values_scen, list):
             shap_values_scen = shap_values_scen[0]
@@ -321,13 +599,11 @@ def main():
         
         # Plot SHAP waterfall
         fig, ax = plt.subplots(figsize=(10, 5))
-        # Customize plot appearance for dark mode compatibility
         fig.patch.set_facecolor('#0f1011')
         ax.set_facecolor('#0f1011')
         
         shap.plots.waterfall(explanation, max_display=7, show=False)
         
-        # Tweak colors for dark mode readability
         for text in ax.get_xticklabels() + ax.get_yticklabels():
             text.set_color('#f7f8f8')
         ax.title.set_color('#f7f8f8')
@@ -335,10 +611,36 @@ def main():
         st.pyplot(fig)
         plt.close()
         
+        # ─── Phase 8.1: SHAP Narration ───────────────────────────────
+        # Build top_contributions dict from SHAP values
+        shap_vals = shap_values_scen[0]
+        feat_names = list(features)
+        abs_vals = np.abs(shap_vals)
+        top_indices = np.argsort(abs_vals)[-5:][::-1]
+        top_contributions = {feat_names[i]: float(shap_vals[i]) for i in top_indices}
+        
+        predicted_value = base_val + float(np.sum(shap_vals))
+        context = {
+            'store_id': store_selected,
+            'sku_id': sku_selected,
+            'date': latest_date,
+        }
+        
+        narration = narrate_shap_explanation(base_val, predicted_value, top_contributions, context)
+        
+        st.markdown(
+            f"""
+            <div class="ai-box">
+                <p>{narration}</p>
+                <div class="ai-disclaimer">Narration generated from pre-computed SHAP values — not independent analysis.</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
     with tab2:
         st.markdown("### Historical Sales & Pricing Trend")
         
-        # Plot last 60 days of actuals for context
         hist_subset = series_df.iloc[-60:].copy()
         
         fig, ax1 = plt.subplots(figsize=(12, 4))
@@ -356,7 +658,6 @@ def main():
         ax1.spines['left'].set_color('#23252a')
         ax1.spines['bottom'].set_color('#23252a')
         
-        # Second axis for price
         ax2 = ax1.twinx()
         color_price = '#27a644'
         ax2.set_ylabel('Price ($)', color=color_price)
@@ -375,17 +676,110 @@ def main():
     with tab3:
         st.markdown("### Model Properties & Exogenous Context")
         
-        # Show recent values
         st.markdown("#### Latest Features State (Baseline vs Simulated)")
         comp_df = pd.DataFrame({
             'Feature': features,
             'Baseline Value': baseline_input.iloc[0].values,
             'Simulated Value': scenario_input.iloc[0].values
         })
-        # Filter only changed rows or important ones for readability
         important_features = ['price', 'is_promo', 'is_holiday', 'temperature', 'precipitation', 'is_rainy', 'temp_band', 'lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_30']
         comp_df = comp_df[comp_df['Feature'].isin(important_features)]
         st.table(comp_df)
+
+    # ─── Phase 8.3: Anomaly Report Tab ────────────────────────────────
+    with tab4:
+        st.markdown("### Forecast Anomaly Detection")
+        st.write("Flags days where the forecast deviates significantly from the 30-day rolling average, then uses AI to explain likely drivers.")
+        
+        z_thresh = st.slider("Z-Score Threshold", 1.0, 3.0, 1.5, step=0.1, key="anomaly_z")
+        
+        # Generate predictions for the selected panel
+        panel_data = series_df.copy()
+        panel_features = [c for c in features if c in panel_data.columns]
+        panel_pred_input = panel_data[panel_features].copy()
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in panel_pred_input.columns:
+                panel_pred_input[col] = panel_pred_input[col].astype('category')
+        
+        panel_preds = np.clip(model.predict(panel_pred_input), 0, None)
+        predictions_df = panel_data[['date', 'store_id', 'sku_id']].copy()
+        predictions_df['prediction'] = panel_preds
+        
+        anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=z_thresh)
+        
+        if anomalies.empty:
+            st.info(f"No anomalies detected above z={z_thresh:.1f} for {store_selected}/{sku_selected}.")
+        else:
+            st.markdown(f"**{len(anomalies)} anomalies detected** (z ≥ {z_thresh:.1f})")
+            
+            # Show top 8
+            for _, row in anomalies.head(8).iterrows():
+                direction_icon = "🔺" if row['z_score'] > 0 else "🔻"
+                explanation = narrate_anomaly(row)
+                
+                st.markdown(
+                    f"""
+                    <div class="ai-box">
+                        <p><strong>{direction_icon} {row['date']}</strong> — Forecast: {row['prediction']:.0f} units vs avg {row['rolling_mean_30']:.0f} (z={row['z_score']:+.1f})</p>
+                        <p>{explanation}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+    # ─── Phase 8.4: NL Q&A Tab ────────────────────────────────────────
+    with tab5:
+        st.markdown("### Ask a Question About the Forecast")
+        st.write("Ask in plain English. The system parses your intent, computes the answer from real data, then phrases it naturally.")
+        
+        st.markdown(
+            """
+            <div style="color: #8a8f98; font-size: 13px; margin-bottom: 12px;">
+            <strong>Try:</strong> "Which SKU has the highest forecast next week at S1?" · 
+            "How is growth trending for SKU003?" · 
+            "Explain any anomalies for S2/SKU001"
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Initialize chat history in session state
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display chat history
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+        
+        # Chat input
+        user_question = st.chat_input("Ask about forecasts, growth, or anomalies...")
+        
+        if user_question:
+            # Display user message
+            st.session_state.chat_history.append({"role": "user", "content": user_question})
+            with st.chat_message("user"):
+                st.markdown(user_question)
+            
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing..."):
+                    store_ids = sorted(df_raw['store_id'].unique())
+                    sku_ids = sorted(df_raw['sku_id'].unique())
+                    
+                    # Step 1: Parse intent
+                    intent_data = parse_user_intent(user_question, store_ids, sku_ids)
+                    
+                    # Step 2: Deterministic computation
+                    result = execute_intent(intent_data, df_feat, features, model)
+                    
+                    # Step 3: Narrate result
+                    answer = narrate_result(result)
+                    
+                st.markdown(answer)
+                st.caption("_AI-assisted answer — computed from real model data, not generated from scratch._")
+            
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+
 
 if __name__ == "__main__":
     main()
