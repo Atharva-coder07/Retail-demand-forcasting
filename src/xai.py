@@ -80,6 +80,68 @@ def explain_single_prediction(explainer, shap_values, X, row_idx, top_n=5):
         
     return "\n".join(explanation_lines)
 
+def format_contributions(top_contributions):
+    """
+    Formats a dict of {feature_name: shap_value} into readable lines for the Gemini prompt.
+    """
+    lines = []
+    for feat, val in top_contributions.items():
+        sign = "+" if val > 0 else ""
+        lines.append(f"  {feat}: {sign}{val:.1f} units")
+    return "\n".join(lines)
+
+def fallback_template_explanation(base_value, predicted_value, top_contributions):
+    """
+    Pure Python fallback when the Gemini API call fails.
+    """
+    delta = predicted_value - base_value
+    pct = (delta / base_value) * 100 if base_value != 0 else 0
+    direction = "above" if delta > 0 else "below"
+    
+    # Pick the single strongest driver
+    if top_contributions:
+        top_feat = max(top_contributions, key=lambda k: abs(top_contributions[k]))
+        top_val = top_contributions[top_feat]
+        driver_dir = "increase" if top_val > 0 else "decrease"
+        return (
+            f"Forecast is {abs(pct):.1f}% {direction} the baseline of {base_value:.0f} units, "
+            f"mainly due to {top_feat} contributing a {abs(top_val):.0f}-unit {driver_dir}."
+        )
+    return f"Forecast is {abs(pct):.1f}% {direction} the baseline of {base_value:.0f} units."
+
+def narrate_shap_explanation(base_value, predicted_value, top_contributions, context):
+    """
+    Uses Gemini to turn pre-computed SHAP contributions into a 1-2 sentence
+    business narrative. Falls back to a template string on any API error.
+    
+    Parameters
+    ----------
+    base_value : float — average/baseline forecast from SHAP explainer
+    predicted_value : float — final model prediction for this row
+    top_contributions : dict — {feature_name: shap_value} for top 3-5 drivers
+    context : dict — {store_id, sku_id, date} for grounding
+    """
+    try:
+        from llm import get_model
+        
+        prompt = f"""You are a retail analytics assistant. Explain this sales forecast to a
+business stakeholder in 1-2 plain-English sentences. Use ONLY the numbers
+given below — do not estimate, round loosely, or add facts not present here.
+
+Store: {context.get('store_id', 'N/A')}, SKU: {context.get('sku_id', 'N/A')}, Date: {context.get('date', 'N/A')}
+Average/baseline forecast: {base_value:.0f} units
+Actual forecast for this day: {predicted_value:.0f} units
+Top contributing factors (feature -> units added or subtracted):
+{format_contributions(top_contributions)}
+
+Write the explanation now. No preamble, no bullet points, just the sentence(s)."""
+
+        response = get_model().generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return fallback_template_explanation(base_value, predicted_value, top_contributions)
+
+
 def generate_waterfall_plot(explainer, shap_values, X, row_idx, output_path="outputs/shap_waterfall_example.png"):
     """
     Generates and saves a waterfall plot for a single row prediction.
