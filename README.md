@@ -1,8 +1,12 @@
 # Retail Demand Forecasting System
 
-An end-to-end Machine Learning system for predicting retail store-SKU panel demand, featuring a leakage-safe feature engineering pipeline, Time-Series Cross Validation (LightGBM), SHAP explainability, foundation-model benchmarking (Chronos/TimeGPT), and an interactive What-If scenario simulator styled with the **Linear dark mode design system**.
+An end-to-end Machine Learning system for predicting retail store-SKU panel demand, featuring a leakage-safe feature engineering pipeline, Time-Series Cross Validation (LightGBM), SHAP explainability, foundation-model benchmarking (Chronos/TimeGPT), Gemini 2.5 Flash API integration, and an interactive What-If scenario simulator styled with the **Linear dark mode design system**.
+
+🚀 **Live Deployed Application**: [https://retail-demand-forcasting-8kwvzdp3pam2w6dsjay5v4.streamlit.app](https://retail-demand-forcasting-8kwvzdp3pam2w6dsjay5v4.streamlit.app)  
+📦 **GitHub Repository**: [https://github.com/Atharva-coder07/Retail-demand-forcasting](https://github.com/Atharva-coder07/Retail-demand-forcasting)
 
 ---
+
 
 ## Project Structure
 
