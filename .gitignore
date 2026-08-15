@@ -7,3 +7,4 @@ outputs/*.csv
 venv/
 .streamlit/
 .DS_Store
+.env

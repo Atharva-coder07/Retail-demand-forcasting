@@ -7,3 +7,5 @@ matplotlib
 prophet
 streamlit
 holidays
+google-generativeai
+python-dotenv
