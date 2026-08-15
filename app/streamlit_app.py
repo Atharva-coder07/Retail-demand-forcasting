@@ -207,28 +207,40 @@ Write the recommendation now."""
 
 # ─── NL Q&A intent parsing (Phase 8.4) ───────────────────────────────────────
 
-def parse_user_intent(user_question, store_ids, sku_ids):
+def parse_user_intent(user_question, store_ids, sku_ids, current_store, current_sku):
     """
     Step 1: Ask Gemini to convert the user's question into a constrained JSON object.
+    The currently-selected sidebar panel is provided as default context so users
+    don't have to specify store/SKU in every question.
     Returns a dict with keys: intent, store_id, sku_id, time_window_days.
     """
     try:
         from llm import get_model
         
-        prompt = f"""Convert the user's question into JSON with this exact schema. Only use
-values that are valid given the lists provided — never invent a store_id or
-sku_id that isn't in the list.
+        prompt = f"""You are a retail forecast assistant. Convert the user's question into JSON.
+
+The user is currently viewing: Store={current_store}, SKU={current_sku}.
+If the user doesn't specify a store or SKU, use these defaults.
+Only use store_ids and sku_ids from the valid lists — never invent values.
 
 Valid store_ids: {list(store_ids)}
 Valid sku_ids: {list(sku_ids)}
 
 Schema:
 {{
-  "intent": "compare_growth" | "single_forecast" | "explain_anomaly" | "unknown",
+  "intent": "compare_growth" | "single_forecast" | "explain_anomaly" | "best_sku" | "summary" | "general_chat",
   "store_id": <one of valid store_ids or null>,
   "sku_id": <one of valid sku_ids or null>,
   "time_window_days": <int or null>
 }}
+
+Intent guide:
+- "single_forecast": user asks about a specific forecast, prediction, or expected sales
+- "compare_growth": user asks about growth, trends, comparison over time
+- "explain_anomaly": user asks about spikes, drops, unusual patterns, or anomalies
+- "best_sku": user asks which SKU performs best, highest/lowest forecast
+- "summary": user asks for an overview, summary, or general status
+- "general_chat": greetings, general questions, or anything that doesn't fit above
 
 User question: "{user_question}"
 
@@ -242,29 +254,33 @@ Return ONLY the JSON, no other text."""
             if raw.endswith("```"):
                 raw = raw[:-3]
             raw = raw.strip()
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        # Fill in defaults from sidebar if not specified
+        if not parsed.get('store_id'):
+            parsed['store_id'] = current_store
+        if not parsed.get('sku_id') and parsed.get('intent') != 'best_sku':
+            parsed['sku_id'] = current_sku
+        return parsed
     except Exception:
-        return {"intent": "unknown", "store_id": None, "sku_id": None, "time_window_days": None}
+        # On any failure, assume they're asking about the current panel
+        return {"intent": "general_chat", "store_id": current_store, "sku_id": current_sku, "time_window_days": None}
 
 
-def execute_intent(intent_data, df_feat, features, model):
+def execute_intent(intent_data, df_feat, features, model, all_sku_ids=None):
     """
     Step 2: Deterministic backend computation based on parsed intent.
     Returns a dict with the computed result.
     """
-    intent = intent_data.get("intent", "unknown")
+    intent = intent_data.get("intent", "general_chat")
     store_id = intent_data.get("store_id")
     sku_id = intent_data.get("sku_id")
     window = intent_data.get("time_window_days", 7) or 7
     
-    if intent == "unknown":
-        return {"type": "unknown", "message": "I couldn't map that to a supported question. Try asking about a specific store/SKU's forecast, growth comparison, or anomaly explanation."}
-    
-    # Filter data
+    # Filter data for the target panel
     mask = pd.Series(True, index=df_feat.index)
     if store_id:
         mask &= df_feat['store_id'] == store_id
-    if sku_id:
+    if sku_id and intent not in ('best_sku',):
         mask &= df_feat['sku_id'] == sku_id
     
     subset = df_feat[mask].copy()
@@ -274,7 +290,6 @@ def execute_intent(intent_data, df_feat, features, model):
     subset = subset.sort_values('date')
     
     if intent == "single_forecast":
-        # Get the latest row and predict
         latest = subset.iloc[-1:]
         feat_cols = [c for c in features if c in latest.columns]
         pred_input = latest[feat_cols].copy()
@@ -291,7 +306,6 @@ def execute_intent(intent_data, df_feat, features, model):
         }
     
     elif intent == "compare_growth":
-        # Compute recent vs prior window forecasts
         recent = subset.tail(window)
         prior = subset.iloc[-(window*2):-window] if len(subset) >= window * 2 else subset.head(window)
         
@@ -316,8 +330,7 @@ def execute_intent(intent_data, df_feat, features, model):
         }
     
     elif intent == "explain_anomaly":
-        # Find biggest anomaly in recent window
-        recent = subset.tail(window)
+        recent = subset.tail(max(window, 30))
         feat_cols = [c for c in features if c in recent.columns]
         for col in ['store_id', 'sku_id', 'temp_band']:
             if col in recent.columns:
@@ -329,7 +342,7 @@ def execute_intent(intent_data, df_feat, features, model):
         
         anomalies = detect_anomalies(df_feat, predictions_df, z_threshold=1.0)
         if anomalies.empty:
-            return {"type": "no_anomaly", "message": f"No significant forecast anomalies detected in the last {window} days for this panel."}
+            return {"type": "no_anomaly", "message": f"No significant forecast anomalies detected in the last {window} days for {store_id}/{sku_id}. The forecast is tracking normally against its 30-day average."}
         
         top_anomaly = anomalies.iloc[0]
         explanation = narrate_anomaly(top_anomaly)
@@ -344,25 +357,108 @@ def execute_intent(intent_data, df_feat, features, model):
             "explanation": explanation,
         }
     
-    return {"type": "unknown", "message": "Could not process that intent."}
+    elif intent == "best_sku":
+        # Find the SKU with the highest latest forecast at this store
+        store_data = df_feat[df_feat['store_id'] == store_id].copy()
+        skus = all_sku_ids or store_data['sku_id'].unique()
+        sku_forecasts = []
+        for s in skus:
+            sku_rows = store_data[store_data['sku_id'] == s].sort_values('date')
+            if sku_rows.empty:
+                continue
+            latest = sku_rows.iloc[-1:]
+            feat_cols = [c for c in features if c in latest.columns]
+            pred_input = latest[feat_cols].copy()
+            for col in ['store_id', 'sku_id', 'temp_band']:
+                if col in pred_input.columns:
+                    pred_input[col] = pred_input[col].astype('category')
+            pred = max(0, float(model.predict(pred_input)[0]))
+            sku_forecasts.append({'sku_id': s, 'forecast': pred})
+        
+        if not sku_forecasts:
+            return {"type": "error", "message": f"No SKU data found for store {store_id}."}
+        
+        sku_forecasts.sort(key=lambda x: x['forecast'], reverse=True)
+        return {
+            "type": "best_sku",
+            "store_id": store_id,
+            "rankings": sku_forecasts,
+        }
+    
+    elif intent == "summary":
+        # Build a quick summary of the current panel
+        latest = subset.iloc[-1:]
+        feat_cols = [c for c in features if c in latest.columns]
+        pred_input = latest[feat_cols].copy()
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in pred_input.columns:
+                pred_input[col] = pred_input[col].astype('category')
+        pred = max(0, float(model.predict(pred_input)[0]))
+        
+        # 7-day growth
+        recent7 = subset.tail(7)
+        prior7 = subset.iloc[-14:-7] if len(subset) >= 14 else subset.head(7)
+        feat_cols_r = [c for c in features if c in recent7.columns]
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in recent7.columns:
+                recent7[col] = recent7[col].astype('category')
+                prior7[col] = prior7[col].astype('category')
+        recent_avg = max(0, float(np.mean(model.predict(recent7[feat_cols_r]))))
+        prior_avg = max(0, float(np.mean(model.predict(prior7[feat_cols_r]))))
+        growth = ((recent_avg - prior_avg) / max(prior_avg, 1e-6)) * 100
+        
+        return {
+            "type": "summary",
+            "store_id": store_id,
+            "sku_id": sku_id,
+            "latest_date": str(latest['date'].iloc[0]),
+            "latest_forecast": pred,
+            "avg_7d": recent_avg,
+            "growth_7d_pct": growth,
+            "has_promo": bool(latest['is_promo'].iloc[0]) if 'is_promo' in latest.columns else False,
+            "has_holiday": bool(latest['is_holiday'].iloc[0]) if 'is_holiday' in latest.columns else False,
+        }
+    
+    elif intent == "general_chat":
+        # For general questions, gather context data and let Gemini respond conversationally
+        latest = subset.iloc[-1:]
+        feat_cols = [c for c in features if c in latest.columns]
+        pred_input = latest[feat_cols].copy()
+        for col in ['store_id', 'sku_id', 'temp_band']:
+            if col in pred_input.columns:
+                pred_input[col] = pred_input[col].astype('category')
+        pred = max(0, float(model.predict(pred_input)[0]))
+        
+        return {
+            "type": "general_chat",
+            "store_id": store_id,
+            "sku_id": sku_id,
+            "latest_forecast": pred,
+            "latest_date": str(latest['date'].iloc[0]),
+            "user_question": intent_data.get('_original_question', ''),
+        }
+    
+    return {"type": "general_chat", "store_id": store_id, "sku_id": sku_id, "latest_forecast": 0, "latest_date": "N/A", "user_question": ""}
 
 
-def narrate_result(result_data):
+def narrate_result(result_data, user_question=""):
     """
-    Step 3: Optionally narrate the computed result via Gemini, or template directly.
+    Step 3: Narrate the computed result — template for structured intents,
+    Gemini for general chat.
     """
     rtype = result_data.get("type")
     
-    if rtype in ("unknown", "error", "no_anomaly"):
+    if rtype in ("error", "no_anomaly"):
         return result_data.get("message", "I couldn't process that question.")
     
     if rtype == "single_forecast":
-        return f"The latest forecast for **{result_data['sku_id']}** at **{result_data['store_id']}** (date: {result_data['date']}) is **{result_data['forecast']:.0f} units**."
+        return f"📊 The latest forecast for **{result_data['sku_id']}** at **{result_data['store_id']}** (date: {result_data['date']}) is **{result_data['forecast']:.0f} units**."
     
     if rtype == "compare_growth":
         direction = "up" if result_data['growth_pct'] > 0 else "down"
+        icon = "📈" if result_data['growth_pct'] > 0 else "📉"
         return (
-            f"Over the last **{result_data['window_days']} days**, the average forecast for "
+            f"{icon} Over the last **{result_data['window_days']} days**, the average forecast for "
             f"**{result_data['sku_id']}** at **{result_data['store_id']}** is "
             f"**{result_data['recent_avg_forecast']:.0f} units/day** — "
             f"that's **{abs(result_data['growth_pct']):.1f}% {direction}** from the prior "
@@ -371,13 +467,62 @@ def narrate_result(result_data):
     
     if rtype == "explain_anomaly":
         return (
-            f"**Anomaly on {result_data['date']}** ({result_data['store_id']}/{result_data['sku_id']}): "
+            f"⚠️ **Anomaly on {result_data['date']}** ({result_data['store_id']}/{result_data['sku_id']}): "
             f"forecast was {result_data['prediction']:.0f} units vs 30-day avg of "
             f"{result_data['rolling_mean']:.0f} (z-score: {result_data['z_score']:+.1f}).  \n"
             f"_{result_data['explanation']}_"
         )
     
-    return "Result computed but no narration template matched."
+    if rtype == "best_sku":
+        rankings = result_data.get('rankings', [])
+        lines = [f"🏆 **SKU Rankings at {result_data['store_id']}** (by latest forecast):"]
+        for i, r in enumerate(rankings):
+            medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+            lines.append(f"  {medal} **{r['sku_id']}** — {r['forecast']:.0f} units/day")
+        return "\n".join(lines)
+    
+    if rtype == "summary":
+        d = result_data
+        growth_icon = "📈" if d['growth_7d_pct'] > 0 else "📉" if d['growth_7d_pct'] < 0 else "➡️"
+        flags = []
+        if d.get('has_promo'):
+            flags.append("🏷️ Promo active")
+        if d.get('has_holiday'):
+            flags.append("🎄 Holiday")
+        flag_str = " · ".join(flags) if flags else "No active promotions or holidays"
+        
+        return (
+            f"📋 **Summary for {d['sku_id']} at {d['store_id']}** (as of {d['latest_date']}):\n\n"
+            f"• Latest forecast: **{d['latest_forecast']:.0f} units**\n"
+            f"• 7-day average: **{d['avg_7d']:.0f} units/day**\n"
+            f"• {growth_icon} 7-day trend: **{d['growth_7d_pct']:+.1f}%**\n"
+            f"• Status: {flag_str}"
+        )
+    
+    if rtype == "general_chat":
+        # Use Gemini for conversational response with data context
+        try:
+            from llm import get_model
+            prompt = f"""You are a helpful retail forecast assistant embedded in a demand forecasting dashboard.
+The user is currently viewing data for Store: {result_data.get('store_id')}, SKU: {result_data.get('sku_id')}.
+Latest forecast: {result_data.get('latest_forecast', 0):.0f} units (date: {result_data.get('latest_date', 'N/A')}).
+
+The user asked: "{user_question}"
+
+Respond helpfully in 1-3 sentences. If they're greeting you, greet them back and briefly mention
+what you can help with (forecasts, growth trends, anomalies, SKU rankings).
+If they ask something outside your scope, politely say so and suggest what you CAN answer.
+Do not invent data — only reference the numbers provided above."""
+            response = get_model().generate_content(prompt)
+            return response.text.strip()
+        except Exception:
+            return (
+                f"👋 Hi! I'm your forecast assistant for **{result_data.get('store_id')}/{result_data.get('sku_id')}**. "
+                f"The latest forecast is **{result_data.get('latest_forecast', 0):.0f} units**. "
+                f"Try asking about **growth trends**, **anomalies**, **best SKU**, or **forecasts**!"
+            )
+    
+    return "I'm not sure how to answer that. Try asking about forecasts, growth, anomalies, or which SKU is performing best!"
 
 
 # ─── Cached data loading ─────────────────────────────────────────────────────
@@ -730,14 +875,13 @@ def main():
     # ─── Phase 8.4: NL Q&A Tab ────────────────────────────────────────
     with tab5:
         st.markdown("### Ask a Question About the Forecast")
-        st.write("Ask in plain English. The system parses your intent, computes the answer from real data, then phrases it naturally.")
+        st.markdown(f"Ask anything in plain English — the chatbot automatically uses **{store_selected}/{sku_selected}** as context.")
         
         st.markdown(
             """
             <div style="color: #8a8f98; font-size: 13px; margin-bottom: 12px;">
-            <strong>Try:</strong> "Which SKU has the highest forecast next week at S1?" · 
-            "How is growth trending for SKU003?" · 
-            "Explain any anomalies for S2/SKU001"
+            <strong>Try:</strong> "What's the forecast?" · "How is growth trending?" · 
+            "Any anomalies?" · "Which SKU is best?" · "Give me a summary"
             </div>
             """,
             unsafe_allow_html=True
@@ -766,14 +910,19 @@ def main():
                     store_ids = sorted(df_raw['store_id'].unique())
                     sku_ids = sorted(df_raw['sku_id'].unique())
                     
-                    # Step 1: Parse intent
-                    intent_data = parse_user_intent(user_question, store_ids, sku_ids)
+                    # Step 1: Parse intent (with sidebar context as defaults)
+                    intent_data = parse_user_intent(
+                        user_question, store_ids, sku_ids,
+                        current_store=store_selected, current_sku=sku_selected
+                    )
+                    intent_data['_original_question'] = user_question
                     
                     # Step 2: Deterministic computation
-                    result = execute_intent(intent_data, df_feat, features, model)
+                    result = execute_intent(intent_data, df_feat, features, model, all_sku_ids=sku_ids)
+                    result['user_question'] = user_question
                     
                     # Step 3: Narrate result
-                    answer = narrate_result(result)
+                    answer = narrate_result(result, user_question=user_question)
                     
                 st.markdown(answer)
                 st.caption("_AI-assisted answer — computed from real model data, not generated from scratch._")
